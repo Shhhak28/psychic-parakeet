@@ -1,95 +1,88 @@
 import tkinter as tk
-from tkinter import messagebox
-import requests
+from tkinter import messagebox, ttk
+import random
+import string
 import json
 import os
+from datetime import datetime
 
-class GitHubFinder:
+class PasswordGenerator:
     def __init__(self, root):
         self.root = root
-        self.root.title("GitHub User Finder")
-        self.root.geometry("450x550")
+        self.root.title("Random Password Generator")
+        self.root.geometry("500x600")
         
-        self.fav_file = "favorites.json"
-        self.favorites = self.load_favorites()
+        self.history_file = "password_history.json"
+        self.history = self.load_history()
 
         # Интерфейс
-        tk.Label(root, text="Введите логин GitHub:", font=('Arial', 10, 'bold')).pack(pady=5)
-        
-        self.search_entry = tk.Entry(root, width=35)
-        self.search_entry.pack(pady=5)
-        
-        btn_frame = tk.Frame(root)
-        btn_frame.pack(pady=10)
-        
-        tk.Button(btn_frame, text="Найти", command=self.search_user, width=10, bg="lightblue").pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="В избранное", command=self.add_to_fav, width=12, bg="lightgreen").pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Показать избранное", command=self.show_favorites).pack(side=tk.LEFT, padx=5)
+        tk.Label(root, text="Настройки пароля", font=('Arial', 12, 'bold')).pack(pady=10)
 
-        # Область вывода данных
-        self.info_text = tk.Text(root, height=15, width=50, state=tk.DISABLED)
-        self.info_text.pack(pady=10, padx=10)
-        
-        self.current_user_data = None
+        tk.Label(root, text="Длина пароля:").pack()
+        self.length_slider = tk.Scale(root, from_=4, to=32, orient=tk.HORIZONTAL, length=300)
+        self.length_slider.set(12)
+        self.length_slider.pack(pady=5)
 
-    def search_user(self):
-        username = self.search_entry.get().strip()
-        if not username:
-            messagebox.showwarning("Ошибка", "Поле поиска не должно быть пустым!")
+        self.use_digits = tk.BooleanVar(value=True)
+        self.use_letters = tk.BooleanVar(value=True)
+        self.use_spec = tk.BooleanVar(value=False)
+
+        tk.Checkbutton(root, text="Цифры (0-9)", variable=self.use_digits).pack(anchor="w", padx=150)
+        tk.Checkbutton(root, text="Буквы (a-z, A-Z)", variable=self.use_letters).pack(anchor="w", padx=150)
+        tk.Checkbutton(root, text="Спецсимволы (!@#$)", variable=self.use_spec).pack(anchor="w", padx=150)
+
+        tk.Button(root, text="Сгенерировать", command=self.generate, bg="lightblue").pack(pady=15)
+
+        self.result_entry = tk.Entry(root, font=('Arial', 12), width=30)
+        self.result_entry.pack(pady=5)
+
+        tk.Label(root, text="История:").pack(pady=5)
+        self.tree = ttk.Treeview(root, columns=("Дата", "Пароль"), show='headings', height=10)
+        self.tree.heading("Дата", text="Дата")
+        self.tree.heading("Пароль", text="Пароль")
+        self.tree.column("Дата", width=150)
+        self.tree.column("Пароль", width=250)
+        self.tree.pack(padx=10, fill=tk.BOTH)
+
+        self.update_table()
+
+    def generate(self):
+        length = self.length_slider.get()
+        chars = ""
+        if self.use_letters.get(): chars += string.ascii_letters
+        if self.use_digits.get(): chars += string.digits
+        if self.use_spec.get(): chars += string.punctuation
+
+        if not chars:
+            messagebox.showwarning("Ошибка", "Выберите хотя бы один тип символов!")
             return
 
-        try:
-            response = requests.get(f"https://github.com{username}")
-            if response.status_code == 200:
-                data = response.json()
-                self.current_user_data = {
-                    "login": data.get("login"),
-                    "name": data.get("name"),
-                    "bio": data.get("bio"),
-                    "url": data.get("html_url")
-                }
-                self.display_user(self.current_user_data)
-            else:
-                messagebox.showerror("Ошибка", "Пользователь не найден")
-        except Exception as e:
-            messagebox.showerror("Ошибка сети", f"Не удалось подключиться: {e}")
+        password = "".join(random.choice(chars) for _ in range(length))
+        self.result_entry.delete(0, tk.END)
+        self.result_entry.insert(0, password)
 
-    def display_user(self, user):
-        self.info_text.config(state=tk.NORMAL)
-        self.info_text.delete(1.0, tk.END)
-        info = f"Логин: {user['login']}\nИмя: {user['name']}\nО себе: {user['bio']}\nСсылка: {user['url']}"
-        self.info_text.insert(tk.END, info)
-        self.info_text.config(state=tk.DISABLED)
+        entry = {"timestamp": datetime.now().strftime("%H:%M:%S"), "password": password}
+        self.history.append(entry)
+        self.save_history()
+        self.update_table()
 
-    def add_to_fav(self):
-        if self.current_user_data:
-            login = self.current_user_data['login']
-            self.favorites[login] = self.current_user_data
-            self.save_favorites()
-            messagebox.showinfo("Успех", f"{login} добавлен в избранное!")
-        else:
-            messagebox.showwarning("Внимание", "Сначала найдите пользователя")
+    def load_history(self):
+        if os.path.exists(self.history_file):
+            try:
+                with open(self.history_file, "r") as f: return json.load(f)
+            except: return []
+        return []
 
-    def load_favorites(self):
-        if os.path.exists(self.fav_file):
-            with open(self.fav_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {}
+    def save_history(self):
+        with open(self.history_file, "w") as f:
+            json.dump(self.history, f, indent=4)
 
-    def save_favorites(self):
-        with open(self.fav_file, "w", encoding="utf-8") as f:
-            json.dump(self.favorites, f, ensure_ascii=False, indent=4)
-
-    def show_favorites(self):
-        self.info_text.config(state=tk.NORMAL)
-        self.info_text.delete(1.0, tk.END)
-        if not self.favorites:
-            self.info_text.insert(tk.END, "Список избранного пуст.")
-        for login in self.favorites:
-            self.info_text.insert(tk.END, f"- {login}\n")
-        self.info_text.config(state=tk.DISABLED)
+    def update_table(self):
+        for item in self.tree.get_children(): self.tree.delete(item)
+        for item in reversed(self.history):
+            self.tree.insert("", tk.END, values=(item["timestamp"], item["password"]))
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = GitHubFinder(root)
+    app = PasswordGenerator(root)
     root.mainloop()
